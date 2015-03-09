@@ -9,6 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef WIN32
+#define snprintf sprintf_s
+#define strcasecmp _stricmp
+#endif
+
 // 8BDIFF FORMAT
 // -------------
 // 4 bits: size of offset bit sizes
@@ -149,9 +154,9 @@ struct Encoder {
 	};
 	
 	enum E8Instr {
-		E8I_TRG,
-		E8I_SRC,
 		E8I_INJ,
+		E8I_SRC,
+		E8I_TRG,
 		E8I_END
 	};
 	
@@ -248,7 +253,7 @@ void Encoder::Build(const char *source, size_t source_size, const char *target, 
 			}
 			// copy bytes from source or target window
 			if (save_src>save_trg) {
-				*next_instr++ += E8I_SRC;
+				*next_instr++ = E8I_SRC;
 				instr[E8I_SRC]++;
 				bitCounts[LENGTH][GetNumBits(src_size)]++;
 				count[LENGTH]++;
@@ -259,7 +264,7 @@ void Encoder::Build(const char *source, size_t source_size, const char *target, 
 				cursor += src_size;
 				src_offs_prev += src_offs + src_size;
 			} else {
-				*next_instr++ += E8I_TRG;
+				*next_instr++ = E8I_TRG;
 				instr[E8I_TRG]++;
 				bitCounts[LENGTH][GetNumBits(trg_size)]++;
 				count[LENGTH]++;
@@ -490,9 +495,9 @@ size_t Decode(char *out, const char *source, const char *diff)
 	bitSizeCnt[0] = *du & 0xf;
 	bitSizeCnt[1] = (*du++>>4) &0xf;
 	bitSize[0] = du;
-	du += 1<<bitSizeCnt[0];
+	du += (int)(1U<<bitSizeCnt[0]);
 	bitSize[1] = du;
-	du += 1<<bitSizeCnt[1];
+	du += (int)(1U<<bitSizeCnt[1]);
 	unsigned int inject_size = 0;
 	if (*du & 0x80) {
 		inject_size = ((int(du[0]&0x7f)<<8) | int(du[1]))<<16;
@@ -544,9 +549,9 @@ size_t GetLength(const char *diff, size_t diff_size)
 	bitSizeCnt[0] = *du & 0xf;
 	bitSizeCnt[1] = (*du++>>4) & 0xf;
 	bitSize[0] = du;
-	du += 1<<bitSizeCnt[0];
+	du += (int)(1U<<bitSizeCnt[0]);
 	bitSize[1] = du;
-	du += 1<<bitSizeCnt[1];
+	du += (int)(1U<<bitSizeCnt[1]);
 	unsigned int inject_size = 0;
 	if (*du & 0x80) {
 		inject_size = ((int(du[0]&0x7f)<<8) | int(du[1]))<<16;
@@ -558,7 +563,7 @@ size_t GetLength(const char *diff, size_t diff_size)
 	du += inject_size;
 	end = du;
 	
-	if ((du-(unsigned char*)diff) >= diff_size)
+	if (size_t(du-(unsigned char*)diff) >= diff_size)
 		return 0;
 	
 	size_t target_size = 0;
@@ -595,7 +600,7 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 
 	if (FILE *f = fopen(filename, "w")) {
 		int bitSizeCnt[2];
-		char *start = (char*)malloc(diff_size);
+		char *start = (char*)malloc(out_size);
 		char *out = start;
 		const unsigned char *bitSize[2];
 		const char *buf[3], *orig[3];
@@ -606,9 +611,9 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 		bitSizeCnt[0] = *du & 0xf;
 		bitSizeCnt[1] = (*du++>>4) &0xf;
 		bitSize[0] = du;
-		du += 1<<bitSizeCnt[0];
+		du += (int)(1U<<bitSizeCnt[0]);
 		bitSize[1] = du;
-		du += 1<<bitSizeCnt[1];
+		du += (int)(1U<<bitSizeCnt[1]);
 		unsigned int inject_size = 0;
 		if (*du & 0x80) {
 			inject_size = ((int(du[0]&0x7f)<<8) | int(du[1]))<<16;
@@ -640,9 +645,10 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 			}
 			const char *data = out, *bufptr = buf[buffer];
 			if (source) {
-				if (buffer==1 && (buf[1]+length-source)>source_size) {
+				if (buffer==1 && size_t(buf[1]+length-source)>source_size) {
 					printf("Source file is not valid (not large enough)\n");
 					source = nullptr;
+				} else if ((out+length)>(start+out_size)) {
 				} else {
 					const char *read = buf[buffer];
 					for (int move=length; move; --move)
@@ -665,7 +671,7 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 				snprintf(bufOffs, sizeof(bufOffs), "0x%x", (int)(bufptr-orig[buffer]));
 			else
 				bufOffs[0] = 0;
-			fprintf(f, "%s,0x%x,%s,0x%x,\"%s\"\n", aBufferNames[buffer], (int)(out-start), bufOffs, length, info);
+			fprintf(f, "%s,0x%x,%s,0x%x,\"%s\"\n", aBufferNames[buffer], (int)(out-length-start), bufOffs, length, info);
 		}
 		// clean up
 		free(start);
@@ -806,11 +812,17 @@ int main(int argc, const char * argv[]) {
 			printf("You have encountered a bug in the program.\n"
 				   "memcmp(target, decode, target_size) = %d (%d / %d)\n",
 				   compare, (int)target_size, (int)decode_size);
+			int errors = 0;
 			for (size_t o=0; o<target_size; o++) {
 				unsigned char t = (unsigned char)target[o];
 				unsigned char b = (unsigned char)buf[o];
-				if (t!=b)
+				if (t!=b) {
 					printf("Byte 0x%x differs (0x%02x != 0x%02x)\n", (int)o, (unsigned char)target[o], (unsigned char)buf[o]);
+					if (errors++>33) {
+						printf(".. too many errors ..\n");
+						break;
+					}
+				}
 			}
 		} else if (aFiles[REF_DIFF]) {
 			if (FILE *f = fopen(aFiles[REF_DIFF], "wb")) {
