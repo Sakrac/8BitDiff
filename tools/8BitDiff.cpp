@@ -45,6 +45,9 @@
 #define EB_SIZE_BITS_MAX 4
 #define E8_MIN_TRG_SRC_LEN 2
 
+// accelerator
+#define USE_BUFFER_ALLOCATOR
+
 // Get index of top bit in value
 int GetNumBits(int value)
 {
@@ -102,6 +105,133 @@ unsigned char* PushBits(unsigned char *out, unsigned char &mask, int value, int 
 	return out;
 }
 
+#ifdef USE_BUFFER_ALLOCATOR
+// Accelerator for finding strings by matching initial pairs
+// (This makes finding patterns really fast but uses
+//  512 kb + (sum of file sizes) * 4)
+struct PairLookupTable {
+    enum { NUM_PAIRS = 256*256 };
+    unsigned int *pair_counts;      // number of each pair
+    unsigned int *offset_arrays;	// list of pairs
+    unsigned int *offset_start;		// index into the offset arrays for each pair
+    
+    void AddBuffer(const char *b, size_t s);
+    unsigned int* GetPairs(const char *t, size_t &count);
+    int Match(const char *match, size_t match_left,
+			  const char *buffer, size_t buffer_size, size_t buffer_exp,
+			  int curr_offset, int &offs, int &size);
+	
+    PairLookupTable() : pair_counts(nullptr),
+        offset_arrays(nullptr), offset_start(nullptr) {}
+    PairLookupTable(const char *b, size_t s) : pair_counts(nullptr),
+        offset_arrays(nullptr), offset_start(nullptr) { AddBuffer(b, s); }
+    ~PairLookupTable() {
+        if (pair_counts)
+            free(pair_counts);
+        if (offset_arrays)
+            free(offset_arrays);
+        if (offset_start)
+            free(offset_start);
+    }
+};
+
+// get an array of matching byte pair offsets
+unsigned int* PairLookupTable::GetPairs(const char *t, size_t &count)
+{
+    unsigned int pair = ((unsigned char)t[0])<<8 | (unsigned char)t[1];
+    if (offset_start[pair]!=~0U) {
+        count = pair_counts[pair];
+        return offset_arrays + offset_start[pair];
+    }
+    return nullptr;
+}
+
+// make a lookup table from a buffer
+void PairLookupTable::AddBuffer(const char *b, size_t s)
+{
+    // index counts
+    size_t pair_intsize = sizeof(unsigned int) * NUM_PAIRS;
+    
+    pair_counts = (unsigned int*)malloc(pair_intsize);
+    offset_start = (unsigned int*)malloc(pair_intsize);
+    memset(pair_counts, sizeof(unsigned int) * NUM_PAIRS, 0);
+    size_t num_pairs = s-1;
+    unsigned const char *r = (unsigned const char*)b;
+    for (size_t p=num_pairs; p; --p) {
+        unsigned int pair = r[0]<<8 | r[1];
+        pair_counts[pair]++;
+        r++;
+    }
+	
+    unsigned int curr_start = 0, sum_pairs_gt1 = 0;
+    for (unsigned int p=0; p<NUM_PAIRS; p++) {
+        if (pair_counts[p]>1) {
+            offset_start[p] = curr_start;
+            curr_start += pair_counts[p];
+            sum_pairs_gt1 += pair_counts[p];
+            pair_counts[p] = 0; // clear pair_counts and start over to fill out cache buffer
+        } else
+            offset_start[p] = 0xffffffff;
+    }
+    
+    // allocate a buffer to hold integer offsets
+    offset_arrays = (unsigned int*)malloc(sizeof(unsigned int) * sum_pairs_gt1);
+    r = (unsigned const char*)b;
+    for (size_t o=0; o<num_pairs; o++) {
+        unsigned int pair = r[0]<<8 | r[1];
+        if (offset_start[pair]!=0xffffffff)
+			offset_arrays[offset_start[pair]+pair_counts[pair]] = (unsigned int)o;
+        pair_counts[pair]++;
+        r++;
+    }
+}
+
+int PairLookupTable::Match(const char *match, size_t match_left,
+    const char *buffer, size_t buffer_size, size_t buffer_exp,
+    int curr_offset, int &offs, int &size)
+{
+    int value = -1;
+    size_t count = 0;
+    if (match_left<2)
+        return value;
+	if (unsigned int *l = GetPairs(match, count)) {
+		for (size_t pair=0; pair<count; pair++) {
+			const char* start = buffer + *l++;
+			if (buffer<=match && start>=match)
+				break; // same buffer as match but not caught up
+			size_t left = (buffer+buffer_size+buffer_exp)-start;
+			if (left>match_left)
+				left = match_left;
+			int len = 0;
+			const char *a = match;
+			const char *b = start;
+			for (size_t c=0; c<left; c++) {
+				if (*a++!=*b++)
+					break;
+				len++;
+			}
+			int offset = int(start-buffer-curr_offset);
+			if (len>E8_MIN_TRG_SRC_LEN) {
+				// note: weight on offset since we probably need to swap
+				// back to this point which might not have been necessary
+				int instr_size = 1 + 1 + 1; // instruction src/trg + sign + src/trg
+				// estimate bits per size and actual bits of offset plus half cost of returning pointer
+				instr_size += E8_SIZE_BITS + 3*GetNumBits(offset)/2;
+				// estimate bits per size and actual bits of length
+				instr_size += E8_SIZE_BITS + GetNumBits(len-1);
+				// bits accounted for minus bits needed for this instruction
+				int saving = len*8 - instr_size;
+				if (saving>value) {
+					value = saving;
+					offs = offset;
+					size = len;
+				}
+			}
+		}
+	}
+	return value;
+}
+#else
 // Find the best string match starting at match within buffer
 // buffer_exp is how much the buffer can grow along with match
 // (is of the same buffer as match)
@@ -144,6 +274,7 @@ int MatchString(const char *match, size_t match_left,
 	}
 	return value;
 }
+#endif
 
 // Encoder data
 struct Encoder {
@@ -224,15 +355,28 @@ void Encoder::Build(const char *source, size_t source_size, const char *target, 
 	size_t cursor = 0;
 	int src_offs_prev = 0;
 	int trg_offs_prev = 0;
+    
+#ifdef USE_BUFFER_ALLOCATOR
+    // lookup tables for the buffers
+    PairLookupTable srcLookup(source, source_size);
+    PairLookupTable trgLookup(target, target_size);
+#endif
 	
 	// first find patterns
 	while (cursor < target_size) {
 		int src_offs, trg_offs;
 		int src_size, trg_size;
+#ifdef USE_BUFFER_ALLOCATOR
+		int save_src = srcLookup.Match(target+cursor, target_size-cursor, source, source_size,
+						0, src_offs_prev, src_offs, src_size);
+		int save_trg = trgLookup.Match(target+cursor, target_size-cursor, target, cursor,
+						target_size-cursor, trg_offs_prev, trg_offs, trg_size);
+#else
 		int save_src = MatchString(target+cursor, target_size-cursor, source, source_size,
 								   0, src_offs_prev, src_offs, src_size);
 		int save_trg = MatchString(target+cursor, target_size-cursor, target, cursor,
 								   target_size-cursor, trg_offs_prev, trg_offs, trg_size);
+#endif
 		int save = save_src > save_trg ? save_src : save_trg;
 		// if no match then push byte to inject buffer
 		if (save<=0 || (save<8 && inject_count)) {
