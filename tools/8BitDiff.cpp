@@ -154,7 +154,7 @@ void PairLookupTable::AddBuffer(const char *b, size_t s)
     
     pair_counts = (unsigned int*)malloc(pair_intsize);
     offset_start = (unsigned int*)malloc(pair_intsize);
-    memset(pair_counts, sizeof(unsigned int) * NUM_PAIRS, 0);
+    memset(pair_counts, 0, sizeof(unsigned int) * NUM_PAIRS);
     size_t num_pairs = s-1;
     unsigned const char *r = (unsigned const char*)b;
     for (size_t p=num_pairs; p; --p) {
