@@ -53,7 +53,7 @@ int GetNumBits(int value)
 
 	if (value<0)
 		value = 1-value;
-	
+
 	int ret = 1;
 	for (int b=16; b; b>>=1) {
 		if (value >= (1<<b)) {
@@ -152,14 +152,14 @@ struct Encoder {
 		OFFSET,
 		TYPES
 	};
-	
+
 	enum E8Instr {
 		E8I_INJ,
 		E8I_SRC,
 		E8I_TRG,
 		E8I_END
 	};
-	
+
 	int bitCounts[TYPES][32];
 	int count[TYPES];
 	int instr[E8I_END];
@@ -170,11 +170,11 @@ struct Encoder {
 	char *instructions;
 	char *inject;
 	int *values;
-	
+
 	char *result;
 	size_t result_size;
-	
-	
+
+
 	Encoder() : instructions(nullptr), inject(nullptr),
 				values(nullptr), inject_size(0),
 				result(nullptr), result_size(0)
@@ -187,9 +187,9 @@ struct Encoder {
 		for (int i=0; i<E8I_END; i++)
 			instr[i] = 0;
 	}
-	
+
 	~Encoder() { Reset(); }
-	
+
 	void Reset() {
 		if (instructions)
 			free(instructions);
@@ -224,7 +224,7 @@ void Encoder::Build(const char *source, size_t source_size, const char *target, 
 	size_t cursor = 0;
 	int src_offs_prev = 0;
 	int trg_offs_prev = 0;
-	
+
 	// first find patterns
 	while (cursor < target_size) {
 		int src_offs, trg_offs;
@@ -296,7 +296,7 @@ void Encoder::Optimize()
 	// check stats
 	int total[TYPES];
 	int top[TYPES];
-	
+
 	for (int i=0; i<TYPES; i++) {
 		int totes = 0;
 		int tops = 0;
@@ -308,7 +308,7 @@ void Encoder::Optimize()
 		total[i] = totes;
 		top[i] = tops;
 	}
-	
+
 	// find an optimal distribution of bit buckets to represent the sizes
 	// 1) bounded by 0 and top
 	for (int i=0; i<TYPES; i++) {
@@ -321,7 +321,7 @@ void Encoder::Optimize()
 			for (int j=0; j<last; j++)
 				i2b[j] = j+1; // min valid amount of bits = 1
 			i2b[last] = top[i];
-			
+
 			bool shuffled = false;
 			do {
 				// calculate size at current setup
@@ -388,11 +388,11 @@ void Encoder::Generate()
 		}
 	}
 	instruction_bits += 1; // the diff is terminated by an injection that goes beyond the end
-	
+
 	diff_size += (instruction_bits+7)/8;
 	result_size = diff_size;
 	result = (char*)malloc(diff_size);
-	
+
 	unsigned char *o = (unsigned char*)result;
 	// write # bits per category
 	*o++ = (bitSizesCount[OFFSET]<<4) | bitSizesCount[LENGTH];
@@ -410,11 +410,11 @@ void Encoder::Generate()
 	}
 	*o++ = (unsigned char)(inject_size>>8);
 	*o++ = (unsigned char)(inject_size);
-	
+
 	// write inject buffer
 	for (int i=0; i<inject_size; i++)
 		*o++ = inject[i];
-	
+
 	// write instructions
 	val = values;
 	unsigned char mask = 0x80;
@@ -491,7 +491,7 @@ size_t Decode(char *out, const char *source, const char *diff)
 	const char *end;
 	const char *start = out;
 	const unsigned char *du = (const unsigned char*)diff;
-	
+
 	bitSizeCnt[0] = *du & 0xf;
 	bitSizeCnt[1] = (*du++>>4) &0xf;
 	bitSize[0] = du;
@@ -542,10 +542,10 @@ size_t GetLength(const char *diff, size_t diff_size)
 	const unsigned char *inject;
 	const unsigned char *end;
 	const unsigned char *du = (const unsigned char*)diff;
-	
+
 	if (diff_size<6)
 		return 0;
-	
+
 	bitSizeCnt[0] = *du & 0xf;
 	bitSizeCnt[1] = (*du++>>4) & 0xf;
 	bitSize[0] = du;
@@ -562,12 +562,12 @@ size_t GetLength(const char *diff, size_t diff_size)
 	inject = du;
 	du += inject_size;
 	end = du;
-	
+
 	if (size_t(du-(unsigned char*)diff) >= diff_size)
 		return 0;
-	
+
 	size_t target_size = 0;
-	
+
 	unsigned char mask = 0x80;
 	//	int num = 0;
 	for (;;) {
@@ -606,7 +606,7 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 		const char *buf[3], *orig[3];
 		const char *end;
 		const unsigned char *du = (const unsigned char*)diff;
-		
+
 		fprintf(f, "name,target,offset,length,data\n");
 		bitSizeCnt[0] = *du & 0xf;
 		bitSizeCnt[1] = (*du++>>4) &0xf;
@@ -697,7 +697,7 @@ const char* LoadFile(const char *name, size_t &size)
 		fclose(f);
 	}
 	return nullptr;
-		
+
 }
 
 // command line options
@@ -712,7 +712,7 @@ enum CMD_OPT {
 	CMD_ENCODE,
 	CMD_DECODE,
 	CMD_STATS,
-	
+
 	CMD_NUM
 };
 
@@ -723,7 +723,7 @@ enum CMD_REF {
 	REF_TARGET,
 	REF_DIFF,
 	REF_STATS,
-	
+
 	REF_COUNT
 };
 
@@ -742,7 +742,7 @@ const char *GetExt(const char *str)
 // Entrypoint
 int main(int argc, const char * argv[]) {
 	const char *aFiles[REF_COUNT] = { nullptr };
-	
+
 	CMD_OPT cmd = CMD_NUM;
 	for (int i=1; i<argc; i++) {
 		const char *arg = argv[i];
@@ -765,7 +765,7 @@ int main(int argc, const char * argv[]) {
 				aFiles[REF_DIFF] = arg;
 		}
 	}
-	
+
 	if (cmd==CMD_NUM ||
 		(cmd==CMD_ENCODE && !aFiles[REF_TARGET]) ||
 		(cmd==CMD_DECODE && (!aFiles[REF_SOURCE] || !aFiles[REF_DIFF])) ||
@@ -802,11 +802,11 @@ int main(int argc, const char * argv[]) {
 		encode.Build(source, source_size, target, target_size);
 		encode.Optimize();
 		encode.Generate();
-		
+
 		// check result!
 		char *buf = (char*)malloc(target_size);
 		size_t decode_size = Decode(buf, source, encode.result);
-		
+
 		int compare = memcmp(target, buf, target_size);
 		if (compare) {
 			printf("You have encountered a bug in the program.\n"
@@ -861,13 +861,13 @@ int main(int argc, const char * argv[]) {
 			free((void*)diff);
 		}
 	}
-	
+
 	if (source)
 		free((void*)source);
-	
+
 	if (target)
 		free((void*)target);
-	
-	
+
+
     return 0;
 }

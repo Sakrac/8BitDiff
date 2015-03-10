@@ -16,5 +16,5 @@
 *.rtf	 diff=astextplain
 *.RTF	 diff=astextplain
 
-*.s linguist-language=Assembler
+*_6502.s linguist-language=6502
 *.cpp linguist-language=C++
