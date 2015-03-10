@@ -46,7 +46,7 @@
 #define E8_MIN_TRG_SRC_LEN 2
 
 // accelerator
-#define USE_BUFFER_ALLOCATOR
+#define USE_BUFFER_ACCELERATOR
 
 // Get index of top bit in value
 int GetNumBits(int value)
@@ -56,7 +56,7 @@ int GetNumBits(int value)
 
 	if (value<0)
 		value = 1-value;
-	
+
 	int ret = 1;
 	for (int b=16; b; b>>=1) {
 		if (value >= (1<<b)) {
@@ -105,95 +105,95 @@ unsigned char* PushBits(unsigned char *out, unsigned char &mask, int value, int 
 	return out;
 }
 
-#ifdef USE_BUFFER_ALLOCATOR
+#ifdef USE_BUFFER_ACCELERATOR
 // Accelerator for finding strings by matching initial pairs
 // (This makes finding patterns really fast but uses
 //  512 kb + (sum of file sizes) * 4)
 struct PairLookupTable {
-    enum { NUM_PAIRS = 256*256 };
-    unsigned int *pair_counts;      // number of each pair
-    unsigned int *offset_arrays;	// list of pairs
-    unsigned int *offset_start;		// index into the offset arrays for each pair
-    
-    void AddBuffer(const char *b, size_t s);
-    unsigned int* GetPairs(const char *t, size_t &count);
-    int Match(const char *match, size_t match_left,
+	enum { NUM_PAIRS = 256*256 };
+	unsigned int *pair_counts;      // number of each pair
+	unsigned int *offset_arrays;	// list of pairs
+	unsigned int *offset_start;		// index into the offset arrays for each pair
+
+	void AddBuffer(const char *b, size_t s);
+	unsigned int* GetPairs(const char *t, size_t &count);
+	int Match(const char *match, size_t match_left,
 			  const char *buffer, size_t buffer_size, size_t buffer_exp,
 			  int curr_offset, int &offs, int &size);
-	
-    PairLookupTable() : pair_counts(nullptr),
-        offset_arrays(nullptr), offset_start(nullptr) {}
-    PairLookupTable(const char *b, size_t s) : pair_counts(nullptr),
-        offset_arrays(nullptr), offset_start(nullptr) { AddBuffer(b, s); }
-    ~PairLookupTable() {
-        if (pair_counts)
-            free(pair_counts);
-        if (offset_arrays)
-            free(offset_arrays);
-        if (offset_start)
-            free(offset_start);
-    }
+
+	PairLookupTable() : pair_counts(nullptr),
+		offset_arrays(nullptr), offset_start(nullptr) {}
+	PairLookupTable(const char *b, size_t s) : pair_counts(nullptr),
+		offset_arrays(nullptr), offset_start(nullptr) { AddBuffer(b, s); }
+	~PairLookupTable() {
+		if (pair_counts)
+			free(pair_counts);
+		if (offset_arrays)
+			free(offset_arrays);
+		if (offset_start)
+			free(offset_start);
+	}
 };
 
 // get an array of matching byte pair offsets
 unsigned int* PairLookupTable::GetPairs(const char *t, size_t &count)
 {
-    unsigned int pair = ((unsigned char)t[0])<<8 | (unsigned char)t[1];
-    if (offset_start[pair]!=~0U) {
-        count = pair_counts[pair];
-        return offset_arrays + offset_start[pair];
-    }
-    return nullptr;
+	unsigned int pair = ((unsigned char)t[0])<<8 | (unsigned char)t[1];
+	if (offset_start[pair]!=~0U) {
+		count = pair_counts[pair];
+		return offset_arrays + offset_start[pair];
+	}
+	return nullptr;
 }
 
 // make a lookup table from a buffer
 void PairLookupTable::AddBuffer(const char *b, size_t s)
 {
-    // index counts
-    size_t pair_intsize = sizeof(unsigned int) * NUM_PAIRS;
-    
-    pair_counts = (unsigned int*)malloc(pair_intsize);
-    offset_start = (unsigned int*)malloc(pair_intsize);
-    memset(pair_counts, 0, sizeof(unsigned int) * NUM_PAIRS);
-    size_t num_pairs = s-1;
-    unsigned const char *r = (unsigned const char*)b;
-    for (size_t p=num_pairs; p; --p) {
-        unsigned int pair = r[0]<<8 | r[1];
-        pair_counts[pair]++;
-        r++;
-    }
-	
-    unsigned int curr_start = 0, sum_pairs_gt1 = 0;
-    for (unsigned int p=0; p<NUM_PAIRS; p++) {
-        if (pair_counts[p]>1) {
-            offset_start[p] = curr_start;
-            curr_start += pair_counts[p];
-            sum_pairs_gt1 += pair_counts[p];
-            pair_counts[p] = 0; // clear pair_counts and start over to fill out cache buffer
-        } else
-            offset_start[p] = 0xffffffff;
-    }
-    
-    // allocate a buffer to hold integer offsets
-    offset_arrays = (unsigned int*)malloc(sizeof(unsigned int) * sum_pairs_gt1);
-    r = (unsigned const char*)b;
-    for (size_t o=0; o<num_pairs; o++) {
-        unsigned int pair = r[0]<<8 | r[1];
-        if (offset_start[pair]!=0xffffffff)
+	// index counts
+	size_t pair_intsize = sizeof(unsigned int) * NUM_PAIRS;
+
+	pair_counts = (unsigned int*)malloc(pair_intsize);
+	offset_start = (unsigned int*)malloc(pair_intsize);
+	memset(pair_counts, 0, sizeof(unsigned int) * NUM_PAIRS);
+	size_t num_pairs = s-1;
+	unsigned const char *r = (unsigned const char*)b;
+	for (size_t p=num_pairs; p; --p) {
+		unsigned int pair = r[0]<<8 | r[1];
+		pair_counts[pair]++;
+		r++;
+	}
+
+	unsigned int curr_start = 0, sum_pairs_gt1 = 0;
+	for (unsigned int p=0; p<NUM_PAIRS; p++) {
+		if (pair_counts[p]>1) {
+			offset_start[p] = curr_start;
+			curr_start += pair_counts[p];
+			sum_pairs_gt1 += pair_counts[p];
+			pair_counts[p] = 0; // clear pair_counts and start over to fill out cache buffer
+		} else
+			offset_start[p] = 0xffffffff;
+	}
+
+	// allocate a buffer to hold integer offsets
+	offset_arrays = (unsigned int*)malloc(sizeof(unsigned int) * sum_pairs_gt1);
+	r = (unsigned const char*)b;
+	for (size_t o=0; o<num_pairs; o++) {
+		unsigned int pair = r[0]<<8 | r[1];
+		if (offset_start[pair]!=0xffffffff)
 			offset_arrays[offset_start[pair]+pair_counts[pair]] = (unsigned int)o;
-        pair_counts[pair]++;
-        r++;
-    }
+		pair_counts[pair]++;
+		r++;
+	}
 }
 
 int PairLookupTable::Match(const char *match, size_t match_left,
-    const char *buffer, size_t buffer_size, size_t buffer_exp,
-    int curr_offset, int &offs, int &size)
+	const char *buffer, size_t buffer_size, size_t buffer_exp,
+	int curr_offset, int &offs, int &size)
 {
-    int value = -1;
-    size_t count = 0;
-    if (match_left<2)
-        return value;
+	int value = -1;
+	size_t count = 0;
+	if (match_left<2)
+		return value;
 	if (unsigned int *l = GetPairs(match, count)) {
 		for (size_t pair=0; pair<count; pair++) {
 			const char* start = buffer + *l++;
@@ -283,14 +283,14 @@ struct Encoder {
 		OFFSET,
 		TYPES
 	};
-	
+
 	enum E8Instr {
 		E8I_INJ,
 		E8I_SRC,
 		E8I_TRG,
 		E8I_END
 	};
-	
+
 	int bitCounts[TYPES][32];
 	int count[TYPES];
 	int instr[E8I_END];
@@ -301,11 +301,10 @@ struct Encoder {
 	char *instructions;
 	char *inject;
 	int *values;
-	
+
 	char *result;
 	size_t result_size;
-	
-	
+
 	Encoder() : instructions(nullptr), inject(nullptr),
 				values(nullptr), inject_size(0),
 				result(nullptr), result_size(0)
@@ -318,9 +317,9 @@ struct Encoder {
 		for (int i=0; i<E8I_END; i++)
 			instr[i] = 0;
 	}
-	
+
 	~Encoder() { Reset(); }
-	
+
 	void Reset() {
 		if (instructions)
 			free(instructions);
@@ -355,18 +354,18 @@ void Encoder::Build(const char *source, size_t source_size, const char *target, 
 	size_t cursor = 0;
 	int src_offs_prev = 0;
 	int trg_offs_prev = 0;
-    
-#ifdef USE_BUFFER_ALLOCATOR
-    // lookup tables for the buffers
-    PairLookupTable srcLookup(source, source_size);
-    PairLookupTable trgLookup(target, target_size);
+
+#ifdef USE_BUFFER_ACCELERATOR
+	// lookup tables for the buffers
+	PairLookupTable srcLookup(source, source_size);
+	PairLookupTable trgLookup(target, target_size);
 #endif
-	
+
 	// first find patterns
 	while (cursor < target_size) {
 		int src_offs, trg_offs;
 		int src_size, trg_size;
-#ifdef USE_BUFFER_ALLOCATOR
+#ifdef USE_BUFFER_ACCELERATOR
 		int save_src = srcLookup.Match(target+cursor, target_size-cursor, source, source_size,
 						0, src_offs_prev, src_offs, src_size);
 		int save_trg = trgLookup.Match(target+cursor, target_size-cursor, target, cursor,
@@ -440,7 +439,7 @@ void Encoder::Optimize()
 	// check stats
 	int total[TYPES];
 	int top[TYPES];
-	
+
 	for (int i=0; i<TYPES; i++) {
 		int totes = 0;
 		int tops = 0;
@@ -452,7 +451,7 @@ void Encoder::Optimize()
 		total[i] = totes;
 		top[i] = tops;
 	}
-	
+
 	// find an optimal distribution of bit buckets to represent the sizes
 	// 1) bounded by 0 and top
 	for (int i=0; i<TYPES; i++) {
@@ -465,7 +464,7 @@ void Encoder::Optimize()
 			for (int j=0; j<last; j++)
 				i2b[j] = j+1; // min valid amount of bits = 1
 			i2b[last] = top[i];
-			
+
 			bool shuffled = false;
 			do {
 				// calculate size at current setup
@@ -532,11 +531,11 @@ void Encoder::Generate()
 		}
 	}
 	instruction_bits += 1; // the diff is terminated by an injection that goes beyond the end
-	
+
 	diff_size += (instruction_bits+7)/8;
 	result_size = diff_size;
 	result = (char*)malloc(diff_size);
-	
+
 	unsigned char *o = (unsigned char*)result;
 	// write # bits per category
 	*o++ = (bitSizesCount[OFFSET]<<4) | bitSizesCount[LENGTH];
@@ -554,11 +553,11 @@ void Encoder::Generate()
 	}
 	*o++ = (unsigned char)(inject_size>>8);
 	*o++ = (unsigned char)(inject_size);
-	
+
 	// write inject buffer
 	for (int i=0; i<inject_size; i++)
 		*o++ = inject[i];
-	
+
 	// write instructions
 	val = values;
 	unsigned char mask = 0x80;
@@ -635,7 +634,7 @@ size_t Decode(char *out, const char *source, const char *diff)
 	const char *end;
 	const char *start = out;
 	const unsigned char *du = (const unsigned char*)diff;
-	
+
 	bitSizeCnt[0] = *du & 0xf;
 	bitSizeCnt[1] = (*du++>>4) &0xf;
 	bitSize[0] = du;
@@ -686,10 +685,10 @@ size_t GetLength(const char *diff, size_t diff_size)
 	const unsigned char *inject;
 	const unsigned char *end;
 	const unsigned char *du = (const unsigned char*)diff;
-	
+
 	if (diff_size<6)
 		return 0;
-	
+
 	bitSizeCnt[0] = *du & 0xf;
 	bitSizeCnt[1] = (*du++>>4) & 0xf;
 	bitSize[0] = du;
@@ -706,12 +705,12 @@ size_t GetLength(const char *diff, size_t diff_size)
 	inject = du;
 	du += inject_size;
 	end = du;
-	
+
 	if (size_t(du-(unsigned char*)diff) >= diff_size)
 		return 0;
-	
+
 	size_t target_size = 0;
-	
+
 	unsigned char mask = 0x80;
 	//	int num = 0;
 	for (;;) {
@@ -750,7 +749,7 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 		const char *buf[3], *orig[3];
 		const char *end;
 		const unsigned char *du = (const unsigned char*)diff;
-		
+
 		fprintf(f, "name,target,offset,length,data\n");
 		bitSizeCnt[0] = *du & 0xf;
 		bitSizeCnt[1] = (*du++>>4) &0xf;
@@ -841,7 +840,7 @@ const char* LoadFile(const char *name, size_t &size)
 		fclose(f);
 	}
 	return nullptr;
-		
+
 }
 
 // command line options
@@ -856,7 +855,7 @@ enum CMD_OPT {
 	CMD_ENCODE,
 	CMD_DECODE,
 	CMD_STATS,
-	
+
 	CMD_NUM
 };
 
@@ -867,7 +866,7 @@ enum CMD_REF {
 	REF_TARGET,
 	REF_DIFF,
 	REF_STATS,
-	
+
 	REF_COUNT
 };
 
@@ -883,10 +882,10 @@ const char *GetExt(const char *str)
 	return "";
 }
 
-// Entrypoint
+// Entry point
 int main(int argc, const char * argv[]) {
 	const char *aFiles[REF_COUNT] = { nullptr };
-	
+
 	CMD_OPT cmd = CMD_NUM;
 	for (int i=1; i<argc; i++) {
 		const char *arg = argv[i];
@@ -909,7 +908,7 @@ int main(int argc, const char * argv[]) {
 				aFiles[REF_DIFF] = arg;
 		}
 	}
-	
+
 	if (cmd==CMD_NUM ||
 		(cmd==CMD_ENCODE && !aFiles[REF_TARGET]) ||
 		(cmd==CMD_DECODE && (!aFiles[REF_SOURCE] || !aFiles[REF_DIFF])) ||
@@ -946,11 +945,11 @@ int main(int argc, const char * argv[]) {
 		encode.Build(source, source_size, target, target_size);
 		encode.Optimize();
 		encode.Generate();
-		
+
 		// check result!
 		char *buf = (char*)malloc(target_size);
 		size_t decode_size = Decode(buf, source, encode.result);
-		
+
 		int compare = memcmp(target, buf, target_size);
 		if (compare) {
 			printf("You have encountered a bug in the program.\n"
@@ -1005,13 +1004,10 @@ int main(int argc, const char * argv[]) {
 			free((void*)diff);
 		}
 	}
-	
+
 	if (source)
 		free((void*)source);
-	
 	if (target)
 		free((void*)target);
-	
-	
-    return 0;
+	return 0;
 }
