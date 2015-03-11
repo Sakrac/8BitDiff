@@ -1,6 +1,9 @@
 # 8BitDiff
 A binary patching format suitable for decoding on 8 bit cpus
 
+![8bitdiff](/media/8bitdiff.png)
+Distribution of injected bytes, source file bytes and target duplicates.
+
 ## Background
 
 I have previously created a VCDIFF decoder in c++ (https://tools.ietf.org/html/rfc3284), which is a curious format.
