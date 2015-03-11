@@ -1,7 +1,7 @@
 # 8BitDiff
 A binary patching format suitable for decoding on 8 bit cpus
 
-![8bitdiff](/media/8bitdiff.png)
+![8bitdiff](/media/8BitDiff.png)
 Distribution of injected bytes, source file bytes and target duplicates.
 
 ## Background
