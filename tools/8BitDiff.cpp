@@ -802,12 +802,15 @@ bool GetStats(const char *filename, const char *source, size_t source_size, cons
 				out += length;
 				buf[buffer] += length;
 			}
-			char info[17], bufOffs[17];
+			char info[33], *pi=info, bufOffs[17];
 			if (source) {
 				int il = length<16 ? length : 16;
-				for (int i=0; i<il; i++)
-					info[i] = data[i]<=' ' ? '.' : data[i];
-				info[il] = 0;
+				for (int i=0; i<il; i++) {
+					*pi++ = data[i]<=' ' ? '.' : data[i];
+					if (data[i]=='"')
+						*pi++ = '"';
+				}
+				*pi = 0;
 			} else
 				info[0] = 0;
 			if (buffer)
