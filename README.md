@@ -29,7 +29,7 @@ Any pointer is set to the end of the run after copy and the offset increments/de
 USAGE (6502)
 ------------
 
-- Use the 8BDIFF tool (https://github.com/sakrac/8BitDiff) to generate a patch between two files. Load the original file and the patch file and assign them as parameters:
+- Use the 8BDIFF tool (https://github.com/sakrac/8BitDiff/tools/8BitDiff.cpp) to generate a patch between two files. Load the original file and the patch file and assign them as parameters:
 - z8BDiff = Address of patch
 - z8BSrc = Address of original data
 - z8BDst = Address to decode updated data
