@@ -12,7 +12,7 @@ Distribution of injected bytes, source file bytes and target duplicates.
 - 4 bits: size of length bit sizes
 - 1 byte length bit sizes
 - 1 byte offset bit sizes
-- 2 bytes size of injected bytes (8 bit specific)
+- 2-4 bytes size of injected bytes (4 bytes if first byte msb set, only 2 bytes supported on 8 bit CPUs)
 - injected bytes
 - loop until end of inject buffer:
 -  bit: 0=inject, 1=source or target
@@ -30,10 +30,33 @@ USAGE (6502)
 ------------
 
 - Use the 8BDIFF tool (https://github.com/sakrac/8BitDiff/tools/8BitDiff.cpp) to generate a patch between two files. Load the original file and the patch file and assign them as parameters:
-- z8BDiff = Address of patch
-- z8BSrc = Address of original data
-- z8BDst = Address to decode updated data
+- z8BDiff = Address of patch (ZP)
+- z8BSrc = Address of original data (ZP)
+- z8BDst = Address to decode updated data (ZP)
 - jsr Patch_8BDiff
+- Address of the first byte after the patched data is now in z8BDst (ZP)
+
+USAGE (Z80)
+------------
+
+- Use the 8BDIFF tool (https://github.com/sakrac/8BitDiff/tools/8BitDiff.cpp) to generate a patch between two files. Load the original file and the patch file and assign them as parameters:
+- BC = Pointer to original data
+- DE = Pointer to where to write patched data
+- HL = Pointer to diff data (from the tool)
+- call Patch_8BDiff
+- Pointer to the first byte after the patched data is returned in DE
+Note that the Z80 decoder implementation is untested and very likely not working at all.  
+
+USAGE (68000)
+------------
+
+- Use the 8BDIFF tool (https://github.com/sakrac/8BitDiff/tools/8BitDiff.cpp) to generate a patch between two files. Load the original file and the patch file and assign them as parameters:
+- a0 = Pointer to diff data (from the tool)
+- a1 = Pointer to original data
+- a2 = Pointer to where to write patched data
+- jsr Patch_8BDiff
+- Pointer to the first byte after the patched data is returned in a2
+Note that the 68000 decoder implementation is untested and very likely not working at all.  
 
 ## Background
 
