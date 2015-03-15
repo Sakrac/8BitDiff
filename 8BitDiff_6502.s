@@ -1,3 +1,9 @@
+﻿//
+// 6502 Decoder for 8BitDiff
+//
+//	Copyright 2015 Carl-Henrik Skårstedt. All rights reserved.
+//			https://github.com/sakrac/8BitDiff/
+//
 // 8BDIFF FORMAT
 // -------------
 // 4 bits: size of offset bit sizes
