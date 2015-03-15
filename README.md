@@ -44,7 +44,7 @@ USAGE (Z80)
 - DE = Pointer to where to write patched data
 - HL = Pointer to diff data (from the tool)
 - call Patch_8BDiff
-- Pointer to the first byte after the patched data is returned in DE
+- Pointer to the first byte after the patched data is returned in DE  
 Note that the Z80 decoder implementation is untested and very likely not working at all.  
 
 USAGE (68000)
@@ -55,7 +55,7 @@ USAGE (68000)
 - a1 = Pointer to original data
 - a2 = Pointer to where to write patched data
 - jsr Patch_8BDiff
-- Pointer to the first byte after the patched data is returned in a2
+- Pointer to the first byte after the patched data is returned in a2  
 Note that the 68000 decoder implementation is untested and very likely not working at all.  
 
 ## Background
